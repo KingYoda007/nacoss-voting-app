@@ -65,7 +65,7 @@ const VoterHistory = () => {
                 </div>
             )}
 
-            <style jsx>{`
+            <style>{`
                 .voter-history { max-width: 800px; margin: 0 auto; }
                 .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; }
                 .history-header h2 { margin: 0; font-size: 1.8rem; }

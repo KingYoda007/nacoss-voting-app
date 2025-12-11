@@ -3,6 +3,7 @@ import { Web3Context } from '../../context/Web3Context';
 import { useContract } from '../../hooks/useContract';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Users, Vote, Layers, Activity } from 'lucide-react';
+import { supabase } from '../../utils/supabaseClient';
 
 const Overview = () => {
     const { provider } = useContext(Web3Context);
@@ -12,7 +13,8 @@ const Overview = () => {
         totalElections: 0,
         activeElections: 0,
         totalCandidates: 0,
-        totalVotes: 0 // This would require iterating usually, or a new contract variable
+        totalVotes: 0,
+        totalVoters: 0
     });
 
     const [chartData, setChartData] = useState([]);
@@ -20,47 +22,74 @@ const Overview = () => {
 
     useEffect(() => {
         const fetchStats = async () => {
-            if (!contract) return;
+            // Only fetch if provider is ready (though we can fetch non-contract stats without it)
             try {
                 setLoading(true);
-                // Fetch basic counters
-                const eCount = await contract.electionCounter();
-                const cCount = await contract.candidateCounter();
 
-                let active = 0;
-                let totalVotesAll = 0;
-                const tempChartData = [];
+                // 1. Fetch Counts from Supabase Tables
+                const { count: electionCount } = await supabase.from('elections').select('*', { count: 'exact', head: true });
+                const { count: activeCount } = await supabase.from('elections').select('*', { count: 'exact', head: true }).eq('isActive', true);
+                const { count: candidateCount } = await supabase.from('candidates').select('*', { count: 'exact', head: true });
+                const { count: voterCount } = await supabase.from('voters').select('*', { count: 'exact', head: true });
 
-                // Iterate to get details (for charts and active status)
-                // In a real production app, you'd want a "getBatchElections" function or The Graph
-                for (let i = 1; i <= Number(eCount); i++) {
-                    const election = await contract.getElectionDetails(i);
-                    if (election.isActive) active++;
+                // 2. Prepare Chart Data & Calculate Total Live Votes
+                let totalLiveVotes = 0;
+                let chart = [];
 
-                    // For chart: we need positions and votes per position
-                    // This is expensive on-chain, doing a simplified version for now
-                    // Assuming we just count raw candidates for "activity" as proxy or random data for demo if empty
-                    tempChartData.push({
-                        name: election.name,
-                        id: i
-                        // votes: ... (fetching votes requires iterating positions -> candidates)
-                    });
+                // Get active election
+                const { data: activeElections } = await supabase.from('elections').select('id, name').eq('isActive', true).limit(1);
+
+                if (activeElections && activeElections.length > 0) {
+                    const activeElection = activeElections[0];
+
+                    // Fetch positions for this election
+                    const { data: positions } = await supabase.from('positions').select('id, name, contract_position_id').eq('election_id', activeElection.id);
+
+                    if (positions && positions.length > 0) {
+                        for (let pos of positions) {
+                            let positionVotes = 0;
+                            // Get candidates from Supabase to know who to check on-chain
+                            const { data: cands } = await supabase.from('candidates').select('*').eq('position_id', pos.id);
+
+                            if (cands && cands.length > 0) {
+                                for (let cand of cands) {
+                                    // Default to 0
+                                    let candVotes = 0;
+
+                                    // If contract is connected, fetch live
+                                    if (contract && cand.contract_candidate_id !== undefined && cand.contract_candidate_id !== null) {
+                                        try {
+                                            const chainCand = await contract.candidates(cand.contract_candidate_id);
+                                            candVotes = Number(chainCand.voteCount || chainCand[4]);
+                                        } catch (e) {
+                                            console.warn("Error fetching candidate stats from chain", e);
+                                        }
+                                    }
+
+                                    positionVotes += candVotes;
+                                }
+                            }
+
+                            totalLiveVotes += positionVotes;
+
+                            chart.push({
+                                name: pos.name || 'Unknown',
+                                votes: positionVotes
+                            });
+                        }
+                    }
                 }
 
+                setChartData(chart);
+
                 setStats({
-                    totalElections: Number(eCount),
-                    activeElections: active,
-                    totalCandidates: Number(cCount),
-                    totalVotes: 0 // Placeholder until we sum deeper
+                    totalElections: electionCount || 0,
+                    activeElections: activeCount || 0,
+                    totalCandidates: candidateCount || 0,
+                    totalVotes: totalLiveVotes, // Use live tally
+                    totalVoters: voterCount || 0
                 });
 
-                // Mocking chart data for visual demo since fetching nested mappings is slow/complex without Graph
-                setChartData([
-                    { name: 'Presidential', votes: 1247, turnout: 85 },
-                    { name: 'Vice Pres', votes: 1198, turnout: 82 },
-                    { name: 'Gen Sec', votes: 950, turnout: 75 },
-                    { name: 'Fin Sec', votes: 880, turnout: 70 },
-                ]);
 
             } catch (err) {
                 console.error("Error fetching overview:", err);
@@ -70,96 +99,129 @@ const Overview = () => {
         };
 
         fetchStats();
-    }, [contract]);
+    }, [contract]); // Re-run when contract is ready
 
     return (
-        <div className="content-area">
-            <div className="dashboard-header">
-                <h2>Dashboard Overview</h2>
-                <p>Welcome back, Administrator. Here's what's happening today.</p>
+        <div className="content-area animate-fade-in">
+            <div className="page-header">
+                <div className="page-title">
+                    <h2>Dashboard Overview</h2>
+                    <p>Real-time insights into the ongoing election.</p>
+                </div>
             </div>
 
-            {/* Stats Grid */}
+            {/* Hero Stats */}
             <div className="stats-grid">
-                <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
-                    <div className="stat-icon" style={{ background: '#eff6ff', color: '#3b82f6' }}>
-                        <Users size={24} />
-                    </div>
-                    <div className="stat-info">
-                        <h3>Total Voters</h3>
-                        <p className="stat-value">1,450</p>
-                        <span className="stat-trend text-green">+12% from yesterday</span>
-                    </div>
-                </div>
-
-                <div className="stat-card" style={{ borderLeft: '4px solid #22c55e' }}>
-                    <div className="stat-icon" style={{ background: '#f0fdf4', color: '#22c55e' }}>
+                <div className="stat-card glass-panel card-hover">
+                    <div className="icon-wrapper bg-blue">
                         <Vote size={24} />
                     </div>
-                    <div className="stat-info">
-                        <h3>Total Votes Cast</h3>
-                        <p className="stat-value">4,275</p>
-                        <span className="stat-trend">83% Turnout</span>
+                    <div>
+                        <h3>Total Votes</h3>
+                        <p className="stat-value">{stats.totalVotes.toLocaleString()}</p>
+                        <span className="stat-label">Recorded On-Chain</span>
                     </div>
                 </div>
 
-                <div className="stat-card" style={{ borderLeft: '4px solid #eab308' }}>
-                    <div className="stat-icon" style={{ background: '#fefce8', color: '#eab308' }}>
+                <div className="stat-card glass-panel card-hover">
+                    <div className="icon-wrapper bg-purple">
+                        <Users size={24} />
+                    </div>
+                    <div>
+                        <h3>Registered Voters</h3>
+                        <p className="stat-value">{(stats.totalVoters || 0).toLocaleString()}</p>
+                        <span className="stat-label">Eligible to vote</span>
+                    </div>
+                </div>
+
+                <div className="stat-card glass-panel card-hover">
+                    <div className="icon-wrapper bg-orange">
                         <Layers size={24} />
                     </div>
-                    <div className="stat-info">
-                        <h3>Active Elections</h3>
-                        <p className="stat-value">{stats.activeElections}</p>
-                        <span className="stat-trend">{stats.totalElections} Total Created</span>
+                    <div>
+                        <h3>Total Elections</h3>
+                        <p className="stat-value">{stats.totalElections}</p>
+                        <span className="stat-label">{stats.activeElections} Currently Active</span>
                     </div>
                 </div>
 
-                <div className="stat-card" style={{ borderLeft: '4px solid #a855f7' }}>
-                    <div className="stat-icon" style={{ background: '#faf5ff', color: '#a855f7' }}>
+                <div className="stat-card glass-panel card-hover">
+                    <div className="icon-wrapper bg-cyan">
                         <Activity size={24} />
                     </div>
-                    <div className="stat-info">
-                        <h3>Candidates</h3>
+                    <div>
+                        <h3>Active Candidates</h3>
                         <p className="stat-value">{stats.totalCandidates}</p>
-                        <span className="stat-trend">Across all positions</span>
+                        <span className="stat-label">Across all positions</span>
                     </div>
                 </div>
             </div>
 
             {/* Charts Section */}
-            <div className="charts-section">
-                <div className="chart-card glass"> {/* Glass class now means white card in new CSS */}
-                    <div className="chart-header">
-                        <h3>Voter Turnout by Election</h3>
-                    </div>
-                    <div className="chart-body" style={{ height: '300px', width: '100%' }}>
-                        <ResponsiveContainer width="100%" height="100%">
+            <div className="charts-section glass-panel">
+                <div className="section-header">
+                    <h3>Live Results</h3>
+                    {stats.activeElections > 0 && <span className="badge active">Live Updates</span>}
+                </div>
+
+                {chartData.length > 0 ? (
+                    <div style={{ width: '100%', height: 400 }}>
+                        <ResponsiveContainer>
                             <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /> {/* Lighter grid */}
-                                <XAxis dataKey="name" stroke="#64748b" /> {/* Slate-500 */}
-                                <YAxis stroke="#64748b" />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#0f172a' }}
-                                    itemStyle={{ color: '#0f172a' }}
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                                <XAxis
+                                    dataKey="name"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: 'var(--text-muted)' }}
+                                    dy={10}
                                 />
-                                <Bar dataKey="votes" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: 'var(--text-muted)' }}
+                                />
+                                <Tooltip
+                                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                                    }}
+                                />
+                                <Bar
+                                    dataKey="votes"
+                                    fill="url(#colorGradient)"
+                                    radius={[8, 8, 0, 0]}
+                                    barSize={50}
+                                />
+                                <defs>
+                                    <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="var(--primary)" stopOpacity={1} />
+                                        <stop offset="100%" stopColor="var(--secondary)" stopOpacity={0.8} />
+                                    </linearGradient>
+                                </defs>
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
-                </div>
+                ) : (
+                    <div className="empty-chart">
+                        <div className="icon-circle">
+                            <Activity size={32} />
+                        </div>
+                        <p>No active election data to display.</p>
+                        <button className="btn-secondary" style={{ marginTop: '1rem' }}>Create Election</button>
+                    </div>
+                )}
             </div>
 
-            <style jsx>{`
-        .dashboard-header { margin-bottom: 2rem; }
-        .dashboard-header h2 { margin: 0; font-size: 1.8rem; color: var(--primary); }
-        .dashboard-header p { color: var(--text-muted); margin-top: 0.5rem; }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
+            <style>{`
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 1.5rem;
+                margin-bottom: 2rem;
+            }
 
         .stat-card {
             background: white;

@@ -2,10 +2,13 @@ import React, { useState, useEffect, useContext } from 'react';
 import { Web3Context } from '../../context/Web3Context';
 import { useContract } from '../../hooks/useContract';
 import { UserPlus, Image, FileText, Search, Trash2 } from 'lucide-react';
+import { supabase } from '../../utils/supabaseClient';
+import { useToast } from '../../context/ToastContext';
 
 const CandidateManager = () => {
     const { provider, signer } = useContext(Web3Context);
     const { contract } = useContract(signer || provider);
+    const { showToast } = useToast();
 
     const [elections, setElections] = useState([]);
     const [positions, setPositions] = useState([]);
@@ -33,67 +36,138 @@ const CandidateManager = () => {
     }, [selectedPosition]);
 
     const fetchElections = async () => {
-        const count = await contract.electionCounter();
-        const loaded = [];
-        for (let i = 1; i <= Number(count); i++) {
-            const el = await contract.getElectionDetails(i);
-            loaded.push({ id: i, name: el.name });
+        try {
+            const { data, error } = await supabase.from('elections').select('*').eq('isActive', true);
+            if (error) throw error;
+            setElections(data || []);
+        } catch (err) {
+            console.error("Fetch elections error:", err);
         }
-        setElections(loaded);
     };
 
     const fetchPositions = async (electionId) => {
-        const posIds = await contract.getPositionIds(electionId);
-        const loaded = [];
-        for (let id of posIds) {
-            const p = await contract.getPosition(electionId, id);
-            loaded.push({ id: Number(p.id), name: p.name });
+        try {
+            const { data, error } = await supabase.from('positions').select('*').eq('election_id', electionId);
+            if (error) throw error;
+            setPositions(data || []);
+        } catch (err) {
+            console.error("Fetch positions error:", err);
         }
-        setPositions(loaded);
     };
 
     const fetchCandidates = async (electionId, posId) => {
-        const cIds = await contract.getCandidateIds(electionId, posId);
-        const loaded = [];
-        for (let id of cIds) {
-            const c = await contract.getCandidate(electionId, posId, id);
-            loaded.push({
-                id: Number(c.id),
-                name: c.name,
-                info: c.info,
-                ipfsImageUrl: c.ipfsImageUrl,
-                voteCount: Number(c.voteCount)
-            });
+        try {
+            const { data, error } = await supabase.from('candidates').select('*').eq('position_id', posId);
+            if (error) throw error;
+            setCandidates(data || []);
+        } catch (err) {
+            console.error("Fetch candidates error:", err);
         }
-        setCandidates(loaded);
+    };
+
+    const [uploading, setUploading] = useState(false);
+
+    const handleImageUpload = async (e) => {
+        try {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            setUploading(true);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            // Upload to 'candidate-photos' bucket
+            const { error: uploadError } = await supabase.storage
+                .from('candidate-photos')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // Get Public URL
+            const { data } = supabase.storage.from('candidate-photos').getPublicUrl(filePath);
+
+            setForm({ ...form, imageUrl: data.publicUrl });
+        } catch (error) {
+            console.error('Error uploading image:', error);
+            showToast('Error uploading image!', "error");
+        } finally {
+            setUploading(false);
+        }
     };
 
     const handleAddCandidate = async (e) => {
         e.preventDefault();
         try {
-            const tx = await contract.addCandidate(selectedPosition, form.name, form.info, form.imageUrl);
+            // Find contract_position_id
+            const pos = positions.find(p => p.id == selectedPosition);
+            if (!pos) return showToast("Position not found", "error");
+
+            // 1. Add to Blockchain
+            // Note: Contract addCandidate takes (positionId, name, info, image)
+            // It assumes positionId is the contract's ID.
+            const tx = await contract.addCandidate(pos.contract_position_id, form.name, form.info, form.imageUrl);
             await tx.wait();
-            alert("Candidate registered successfully!");
+
+            // 2. Add to Supabase
+            // We need new Candidate ID from chain ideally, or fallback to auto-increment
+            // For voting, we need the contract ID.
+            // Let's count candidates for this pos on chain to guess the ID? 
+            // Or assumes it's auto-increment logic: previous count + 1.
+            const cIds = await contract.getCandidateIds(pos.contract_position_id);
+            const newContractId = cIds[cIds.length - 1];
+
+            const { error } = await supabase.from('candidates').insert([
+                {
+                    election_id: selectedElection,
+                    position_id: selectedPosition,
+                    contract_candidate_id: Number(newContractId),
+                    name: form.name,
+                    info: form.info,
+                    ipfsImageUrl: form.imageUrl,
+                    voteCount: 0
+                }
+            ]);
+
+            if (error) console.error("Supabase Save Error:", error);
+
+            showToast("Candidate registered successfully!", "success");
             setForm({ name: '', info: '', imageUrl: '' });
             fetchCandidates(selectedElection, selectedPosition);
         } catch (err) {
             console.error(err);
-            alert("Error adding candidate");
+            showToast("Error adding candidate: " + (err.reason || err.message), "error");
+        }
+    };
+
+    const handleDeleteCandidate = async (candidateId) => {
+        if (!window.confirm("Are you sure you want to delete this candidate? This will remove them from the interface.")) return;
+
+        try {
+            const { error } = await supabase.from('candidates').delete().eq('id', candidateId);
+            if (error) throw error;
+
+            // Refresh
+            fetchCandidates(selectedElection, selectedPosition);
+            showToast("Candidate deleted.", "success");
+        } catch (err) {
+            console.error("Delete error:", err);
+            showToast("Failed to delete candidate.", "error");
         }
     };
 
     return (
         <div className="content-area">
-            <div className="header-actions">
-                <div>
+            <div className="page-header">
+                <div className="page-title">
                     <h2>Candidate Registry</h2>
-                    <p style={{ color: 'var(--text-muted)' }}>Manage candidates for specific election positions.</p>
+                    <p>Manage candidates for specific election positions.</p>
                 </div>
             </div>
 
             <div className="candidate-layout">
                 {/* Form Section */}
-                <div className="form-card glass">
+                <div className="form-card glass-panel">
                     <h3>Register New Candidate</h3>
                     <form onSubmit={handleAddCandidate}>
                         <div className="form-group">
@@ -131,11 +205,18 @@ const CandidateManager = () => {
                                 </div>
 
                                 <div className="form-group">
-                                    <label>Photo URL</label>
+                                    <label>Candidate Photo</label>
                                     <div className="input-icon">
                                         <Image size={16} />
-                                        <input required placeholder="https://..." value={form.imageUrl} onChange={e => setForm({ ...form, imageUrl: e.target.value })} />
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleImageUpload}
+                                            disabled={uploading}
+                                            style={{ paddingTop: '0.6rem' }}
+                                        />
                                     </div>
+                                    {uploading && <small style={{ color: 'var(--primary)', marginTop: '5px' }}>Uploading image...</small>}
                                 </div>
 
                                 {form.imageUrl && (
@@ -144,8 +225,8 @@ const CandidateManager = () => {
                                     </div>
                                 )}
 
-                                <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
-                                    Add Candidate
+                                <button type="submit" className="btn-primary" disabled={uploading} style={{ width: '100%', marginTop: '1rem', opacity: uploading ? 0.7 : 1 }}>
+                                    {uploading ? 'Uploading...' : 'Add Candidate'}
                                 </button>
                             </div>
                         )}
@@ -156,7 +237,7 @@ const CandidateManager = () => {
 
                 {/* List Section */}
                 <div className="list-section">
-                    <div className="list-header glass">
+                    <div className="list-header glass-panel">
                         <div className="search-bar">
                             <Search size={18} />
                             <input placeholder="Search candidate..." />
@@ -166,14 +247,14 @@ const CandidateManager = () => {
 
                     <div className="candidates-grid">
                         {candidates.map(c => (
-                            <div key={c.id} className="candidate-card glass">
+                            <div key={c.id} className="candidate-card glass-panel card-hover">
                                 <img src={c.ipfsImageUrl} alt={c.name} className="candidate-img" />
                                 <div className="candidate-info">
                                     <h4>{c.name}</h4>
                                     <p>{c.info}</p>
-                                    <span className="vote-badge">{c.voteCount} Votes</span>
+                                    <span className="badge active" style={{ marginTop: '0.5rem', display: 'inline-block' }}>{c.voteCount} Votes</span>
                                 </div>
-                                <button className="delete-btn"><Trash2 size={16} /></button>
+                                <button className="delete-btn" onClick={() => handleDeleteCandidate(c.id)}><Trash2 size={16} /></button>
                             </div>
                         ))}
                         {candidates.length === 0 && selectedPosition && (
@@ -183,15 +264,15 @@ const CandidateManager = () => {
                 </div>
             </div>
 
-            <style jsx>{`
+            <style>{`
                 .candidate-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; margin-top: 2rem; }
                 
                 .form-card { padding: 2rem; border-radius: 16px; height: fit-content; }
                 .form-group { margin-bottom: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-muted); font-size: 0.9rem; }
                 
-                .select-input, .input-icon input { width: 100%; padding: 0.8rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; color: white; }
-                .input-icon { display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px; padding-left: 0.8rem; }
-                .input-icon input { border: none; background: transparent; padding-left: 0; }
+                .select-input { width: 100%; }
+                .input-icon { display: flex; align-items: center; gap: 0.5rem; background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; padding-left: 0.8rem; color: var(--text-main); }
+                .input-icon input { border: none; background: transparent; padding-left: 0; padding: 0.8rem 0; width: 100%; color: inherit; }
                 .input-icon input:focus { outline: none; }
                 
                 .image-preview img { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-top: 0.5rem; border: 1px solid var(--border-color); }
@@ -199,9 +280,9 @@ const CandidateManager = () => {
 
                 .list-section { display: flex; flex-direction: column; gap: 1rem; }
                 .list-header { padding: 1rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
-                .search-bar { display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.2); padding: 0.5rem 1rem; border-radius: 20px; width: 300px; }
-                .search-bar input { background: transparent; border: none; color: white; width: 100%; }
-                .search-bar input:focus { outline: none; }
+                .search-bar { display: flex; align-items: center; gap: 0.5rem; background: #ffffff; padding: 0.5rem 1rem; border-radius: 20px; width: 300px; border: 1px solid var(--border-color); }
+                .search-bar input { background: transparent; border: none; color: var(--text-main); width: 100%; padding: 0; }
+                .search-bar input:focus { outline: none; box-shadow: none; border: none; }
 
                 .candidates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
                 .candidate-card { padding: 1rem; border-radius: 12px; position: relative; display: flex; flex-direction: column; gap: 0.5rem; }

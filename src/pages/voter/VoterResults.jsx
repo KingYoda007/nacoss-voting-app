@@ -5,13 +5,13 @@ import { supabase } from '../../utils/supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Trophy, Award, Activity, Calendar, RefreshCcw } from 'lucide-react';
 
-const AdminResults = () => {
+const VoterResults = () => {
     const { provider } = useContext(Web3Context);
     const { contract } = useContract();
 
     const [elections, setElections] = useState([]);
     const [selectedElectionId, setSelectedElectionId] = useState('');
-    const [resultsData, setResultsData] = useState([]); // [{ position: "President", candidates: [ ... ] }]
+    const [resultsData, setResultsData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
 
@@ -22,7 +22,6 @@ const AdminResults = () => {
                 const { data } = await supabase.from('elections').select('*').order('created_at', { ascending: false });
                 setElections(data || []);
                 if (data && data.length > 0) {
-                    // Default to first active or first available
                     const active = data.find(e => e.isActive);
                     setSelectedElectionId(active ? active.id : data[0].id);
                 }
@@ -33,7 +32,7 @@ const AdminResults = () => {
         fetchElections();
     }, []);
 
-    // 2. Fetch Results when Election Changes
+    // 2. Fetch Results
     useEffect(() => {
         if (selectedElectionId) {
             fetchResults(selectedElectionId);
@@ -43,7 +42,6 @@ const AdminResults = () => {
     const fetchResults = async (electionId) => {
         setLoading(true);
         try {
-            // A. Get Positions
             const { data: positions } = await supabase.from('positions').select('*').eq('election_id', electionId);
 
             if (!positions || positions.length === 0) {
@@ -52,35 +50,26 @@ const AdminResults = () => {
                 return;
             }
 
-            // B. Get Candidates
             const { data: candidates } = await supabase.from('candidates').select('*').eq('election_id', electionId);
 
-            // C. Structure Data
             const structuredResults = positions.map(pos => {
                 const posCandidates = candidates.filter(c => c.position_id === pos.id);
                 return {
                     ...pos,
                     candidates: posCandidates.map(c => ({
                         ...c,
-                        voteCount: 0 // Default, will update from chain
+                        voteCount: 0
                     }))
                 };
             });
 
-            // D. Sync with Chain (if contract is ready)
             if (contract) {
                 setSyncing(true);
                 for (let pos of structuredResults) {
                     for (let cand of pos.candidates) {
                         try {
                             if (cand.contract_candidate_id !== undefined) {
-                                // Assuming standard mapping: candidates(id) -> struct
                                 const chainCand = await contract.candidates(cand.contract_candidate_id);
-                                // chainCand is usually [id, name, info, image, voteCount]
-                                // We strictly need voteCount. usually index 4 or 'voteCount' property
-                                // Ethers returns a Result object (array-like)
-                                // Let's try named property if ABI supports it, or generic index
-                                // Standard struct order: id, name, info, image, voteCount
                                 const votes = Number(chainCand.voteCount || chainCand[4]);
                                 cand.voteCount = votes;
                             }
@@ -88,7 +77,6 @@ const AdminResults = () => {
                             console.warn(`Failed to sync votes for ${cand.name}:`, err);
                         }
                     }
-                    // Sort by votes
                     pos.candidates.sort((a, b) => b.voteCount - a.voteCount);
                 }
                 setSyncing(false);
@@ -113,8 +101,8 @@ const AdminResults = () => {
         <div className="content-area animate-fade-in">
             <div className="page-header">
                 <div className="page-title">
-                    <h2>Election Results</h2>
-                    <p>Real-time tallying and historical data analysis.</p>
+                    <h2>Live Election Results</h2>
+                    <p>View real-time voting results directly from the blockchain.</p>
                 </div>
                 <div className="header-actions" style={{ gap: '1rem', display: 'flex', alignItems: 'center' }}>
                     <select
@@ -130,7 +118,7 @@ const AdminResults = () => {
                         ))}
                     </select>
 
-                    <button onClick={handleRefresh} className="btn-secondary" title="Sync with Blockchain">
+                    <button onClick={handleRefresh} className="btn-secondary" title="Refresh Live Data">
                         <RefreshCcw size={18} className={syncing ? 'spin' : ''} />
                     </button>
                 </div>
@@ -139,11 +127,11 @@ const AdminResults = () => {
             {loading ? (
                 <div className="loading-state glass-panel">
                     <Activity size={32} className="spin" style={{ color: 'var(--primary)' }} />
-                    <p>Fetching blockchain data...</p>
+                    <p>Fetching result data...</p>
                 </div>
             ) : resultsData.length === 0 ? (
                 <div className="empty-state glass-panel">
-                    <p>No data found for this election.</p>
+                    <p>No results found for this election.</p>
                 </div>
             ) : (
                 <div className="results-grid">
@@ -228,4 +216,4 @@ const AdminResults = () => {
     );
 };
 
-export default AdminResults;
+export default VoterResults;

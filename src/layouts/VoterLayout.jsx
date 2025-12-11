@@ -1,13 +1,13 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Wallet, LogOut, History, Vote } from 'lucide-react';
+import { Wallet, LogOut, History, Vote, BarChart2 } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import { useContext, useEffect } from 'react';
 import { Web3Context } from '../context/Web3Context';
 
 const VoterLayout = () => {
     const navigate = useNavigate();
-    const { currentAccount, connectWallet, shortenAddress } = useContext(Web3Context);
+    const { currentAccount, connectWallet, disconnectWallet, shortenAddress } = useContext(Web3Context);
 
     useEffect(() => {
         if (!currentAccount) {
@@ -17,7 +17,7 @@ const VoterLayout = () => {
     }, [currentAccount, navigate]);
 
     const handleLogout = () => {
-        navigate('/');
+        disconnectWallet();
     };
 
     return (
@@ -37,6 +37,10 @@ const VoterLayout = () => {
                         <Vote size={18} />
                         <span>Vote</span>
                     </NavLink>
+                    <NavLink to="/voter/results" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                        <BarChart2 size={18} />
+                        <span>Results</span>
+                    </NavLink>
                     <NavLink to="/voter/history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
                         <History size={18} />
                         <span>My History</span>
@@ -45,16 +49,19 @@ const VoterLayout = () => {
 
                 <div className="header-actions">
                     {currentAccount ? (
-                        <div className="wallet-badge">
-                            <Wallet size={16} />
-                            <span>{shortenAddress(currentAccount)}</span>
-                        </div>
+                        <>
+                            <div className="wallet-badge">
+                                <Wallet size={16} />
+                                <span>{shortenAddress(currentAccount)}</span>
+                            </div>
+                            <button onClick={handleLogout} className="disconnect-btn" title="Disconnect Wallet">
+                                <LogOut size={16} />
+                                <span>Disconnect</span>
+                            </button>
+                        </>
                     ) : (
                         <button onClick={connectWallet} className="connect-btn-small">Connect Wallet</button>
                     )}
-                    <button onClick={handleLogout} className="logout-icon-btn" title="Exit">
-                        <LogOut size={20} />
-                    </button>
                 </div>
             </header>
 

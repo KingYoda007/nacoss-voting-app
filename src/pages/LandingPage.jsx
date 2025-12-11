@@ -7,6 +7,7 @@ import { Web3Context } from '../context/Web3Context';
 const LandingPage = () => {
     const navigate = useNavigate();
     const { connectWallet, currentAccount, isLoading } = useContext(Web3Context);
+    const { showToast } = useToast();
     const [showHelp, setShowHelp] = useState(false);
 
     const handleAdminLogin = () => {
@@ -29,7 +30,7 @@ const LandingPage = () => {
                 if (error.message === "EMPTY_WALLET") {
                     setShowHelp(true);
                 } else {
-                    alert("Failed to connect: " + error.message);
+                    showToast("Failed to connect: " + error.message, "error");
                 }
             }
         }
@@ -125,7 +126,7 @@ const LandingPage = () => {
                                 } catch (err) {
                                     console.error(err);
                                     // Show the EXACT error from MetaMask
-                                    alert("MetaMask Error: " + (err.message || err));
+                                    showToast("MetaMask Error: " + (err.message || err), "error");
                                 }
                             }} style={{
                                 background: '#2563eb', color: 'white', border: 'none',

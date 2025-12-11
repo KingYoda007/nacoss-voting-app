@@ -2,10 +2,12 @@ import React, { useState, useEffect, useContext } from 'react';
 import { Web3Context } from '../../context/Web3Context';
 import { useContract } from '../../hooks/useContract';
 import { Vote, CheckCircle, AlertCircle, Clock, ChevronRight } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 const VotingBooth = () => {
     const { provider, signer, currentAccount } = useContext(Web3Context);
     const { contract } = useContract(signer || provider);
+    const { showToast } = useToast();
 
     const [elections, setElections] = useState([]);
     const [selectedElection, setSelectedElection] = useState(null);
@@ -95,14 +97,14 @@ const VotingBooth = () => {
                 timestamp: Date.now()
             });
 
-            alert(`Vote cast successfully! Tx: ${receipt.hash.slice(0, 10)}...`);
+            showToast(`Vote cast successfully! Tx: ${receipt.hash.slice(0, 10)}...`, "success");
             setConfirmVote(null);
 
             // Refresh Status
             setVotingStatus(prev => ({ ...prev, [confirmVote.positionId]: true }));
         } catch (err) {
             console.error(err);
-            alert("Voting failed: " + (err.reason || err.message));
+            showToast("Voting failed: " + (err.reason || err.message), "error");
         }
     };
 
@@ -204,7 +206,7 @@ const VotingBooth = () => {
                 </div>
             )}
 
-            <style jsx>{`
+            <style>{`
                 .voting-booth { max-width: 900px; margin: 0 auto; }
                 .header-section { text-align: center; margin-bottom: 3rem; }
                 .header-section h2 { font-size: 2rem; margin: 0; }

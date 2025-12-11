@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Wallet, ShieldCheck, GraduationCap, ChevronRight, Lock } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import { Web3Context } from '../context/Web3Context';
+import { useToast } from '../context/ToastContext';
 
 const LandingPage = () => {
     const navigate = useNavigate();

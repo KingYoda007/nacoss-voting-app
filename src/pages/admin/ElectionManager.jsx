@@ -142,15 +142,28 @@ const ElectionManager = () => {
     };
 
     const toggleStatus = async (electionId, currentStatus) => {
+        // Prevent re-opening manually if it was closed
+        if (!currentStatus) {
+            return showToast("Cannot re-open a closed election for security reasons.", "error");
+        }
+
+        if (!window.confirm("Are you sure you want to END this election? This cannot be undone.")) {
+            return;
+        }
+
         try {
             // 1. Update Blockchain
-            const tx = await contract.toggleElectionStatus(electionId, !currentStatus);
+            // Since we are only allowing stopping (true -> false), we pass false (or the inverse of currentStatus which is boolean)
+            // But logic says: next status is !currentStatus
+            const nextStatus = !currentStatus;
+
+            const tx = await contract.toggleElectionStatus(electionId, nextStatus);
             await tx.wait();
 
             // 2. Update Supabase
             const { error } = await supabase
                 .from('elections')
-                .update({ isActive: !currentStatus })
+                .update({ isActive: nextStatus })
                 .eq('id', electionId);
 
             if (error) {
@@ -160,9 +173,9 @@ const ElectionManager = () => {
                 // Success
                 fetchElections(); // Reload list
                 if (selectedElection && selectedElection.id === electionId) {
-                    setSelectedElection({ ...selectedElection, isActive: !currentStatus });
+                    setSelectedElection({ ...selectedElection, isActive: nextStatus });
                 }
-                showToast(`Election ${!currentStatus ? 'Re-opened' : 'Ended'} successfully!`, "success");
+                showToast(`Election Ended successfully!`, "success");
             }
         } catch (err) {
             console.error(err);
@@ -239,9 +252,15 @@ const ElectionManager = () => {
                                 </span>
                             </div>
                             <div className="status-toggle">
-                                <button className="btn-secondary" onClick={() => toggleStatus(selectedElection.id, selectedElection.isActive)}>
-                                    {selectedElection.isActive ? 'End Election' : 'Re-open Election'}
-                                </button>
+                                {selectedElection.isActive ? (
+                                    <button className="btn-secondary" onClick={() => toggleStatus(selectedElection.id, selectedElection.isActive)} style={{ background: '#fecdd3', color: '#be123c', border: '1px solid #fecdd3' }}>
+                                        End Election Permanently
+                                    </button>
+                                ) : (
+                                    <button className="btn-secondary" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                                        Election Closed
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

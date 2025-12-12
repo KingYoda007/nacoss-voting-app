@@ -1,23 +1,23 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Wallet, LogOut, History, Vote, BarChart2 } from 'lucide-react';
+import { Wallet, LogOut, History, Vote, BarChart2, User } from 'lucide-react'; // Added User
 import logo from '../assets/logo.jpg';
 import { useContext, useEffect } from 'react';
 import { Web3Context } from '../context/Web3Context';
+import { useAuth } from '../context/AuthContext';
+import WalletProfile from '../components/WalletProfile';
 
 const VoterLayout = () => {
     const navigate = useNavigate();
     const { currentAccount, connectWallet, disconnectWallet, shortenAddress } = useContext(Web3Context);
+    const { logout } = useAuth();
 
-    useEffect(() => {
-        if (!currentAccount) {
-            // Optional: You could show a toast here "Please connect wallet"
-            navigate('/');
-        }
-    }, [currentAccount, navigate]);
+    // Removed wallet-check useEffect to allow Email auth persistence without wallet
 
-    const handleLogout = () => {
-        disconnectWallet();
+    const handleLogout = async () => {
+        disconnectWallet(); // Optional: Clear wallet state
+        await logout(); // Clear Auth session
+        navigate('/');
     };
 
     return (
@@ -45,23 +45,30 @@ const VoterLayout = () => {
                         <History size={18} />
                         <span>My History</span>
                     </NavLink>
+                    <NavLink to="/voter/profile" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                        <User size={18} />
+                        <span>Profile</span>
+                    </NavLink>
                 </nav>
 
                 <div className="header-actions">
+                    {/* Wallet Connection */}
                     {currentAccount ? (
-                        <>
-                            <div className="wallet-badge">
-                                <Wallet size={16} />
-                                <span>{shortenAddress(currentAccount)}</span>
-                            </div>
-                            <button onClick={handleLogout} className="disconnect-btn" title="Disconnect Wallet">
-                                <LogOut size={16} />
-                                <span>Disconnect</span>
-                            </button>
-                        </>
+                        <WalletProfile
+                            address={currentAccount}
+                            onDisconnect={disconnectWallet}
+                        />
                     ) : (
                         <button onClick={connectWallet} className="connect-btn-small">Connect Wallet</button>
                     )}
+
+                    {/* Divider */}
+                    <div style={{ width: '1px', background: 'var(--border-color)', height: '24px', margin: '0 0.5rem' }}></div>
+
+                    {/* Auth Logout - Distinct styling */}
+                    <button onClick={async () => { await logout(); navigate('/'); }} className="icon-btn" title="Sign Out">
+                        <LogOut size={18} color="var(--danger)" />
+                    </button>
                 </div>
             </header>
 

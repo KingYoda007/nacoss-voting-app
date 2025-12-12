@@ -2,15 +2,21 @@ import React, { useContext } from 'react'; // Added useContext
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Vote, Users, UserPlus, LogOut, FileText, ShieldAlert } from 'lucide-react';
 import { Web3Context } from '../context/Web3Context'; // Import Context
+import { useAuth } from '../context/AuthContext';
 import logo from '../assets/logo.jpg';
 import ErrorBoundary from '../components/ErrorBoundary';
+import WalletProfile from '../components/WalletProfile';
 
 const AdminLayout = () => {
     const navigate = useNavigate();
     const { connectWallet, currentAccount, isAdmin, isLoading, disconnectWallet } = useContext(Web3Context); // Get context
 
-    const handleLogout = () => {
-        disconnectWallet();
+    const { logout } = useAuth(); // Import auth logout
+
+    const handleLogout = async () => {
+        disconnectWallet();       // 1. Clear Wallet
+        await logout();           // 2. Clear Supabase Session
+        navigate('/admin/login'); // 3. Redirect to Admin Login
     };
 
     if (isLoading) {
@@ -87,15 +93,10 @@ const AdminLayout = () => {
                     <h2>Admin Portal</h2>
                     <div className="user-profile">
                         {currentAccount ? (
-                            <>
-                                <div className="avatar">A</div>
-                                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.2' }}>
-                                    <span style={{ fontSize: '0.9rem', fontWeight: '500' }}>Administrator</span>
-                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                        {currentAccount.slice(0, 6)}...{currentAccount.slice(-4)}
-                                    </span>
-                                </div>
-                            </>
+                            <WalletProfile
+                                address={currentAccount}
+                                onDisconnect={handleLogout}
+                            />
                         ) : (
                             <button className="btn-primary" onClick={connectWallet} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
                                 Connect Wallet

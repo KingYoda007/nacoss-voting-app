@@ -99,6 +99,12 @@ export const Web3Provider = ({ children }) => {
                 return;
             }
 
+            // Check if explicitly disconnected
+            if (localStorage.getItem('walletDisconnected') === 'true') {
+                console.log("Wallet explicitly disconnected by user.");
+                return;
+            }
+
             const accounts = await provider.request({ method: 'eth_accounts' });
 
             if (accounts.length) {
@@ -124,6 +130,7 @@ export const Web3Provider = ({ children }) => {
     };
 
     const connectWallet = async () => {
+        localStorage.removeItem('walletDisconnected'); // Reset flag
         try {
             const provider = await detectEthereumProvider();
 
@@ -196,8 +203,9 @@ export const Web3Provider = ({ children }) => {
         setCurrentAccount('');
         setIsAdmin(false);
         setContractOwner('');
+        localStorage.setItem('walletDisconnected', 'true'); // Flag to prevent auto-reconnect
         console.log("Wallet Disconnected via App");
-        window.location.href = '/'; // Hard reload to clear any other state
+        window.location.reload(); // Reload to clear state
     };
 
     useEffect(() => {

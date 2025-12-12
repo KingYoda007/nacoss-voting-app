@@ -42,7 +42,12 @@ export const Web3Provider = ({ children }) => {
                             {
                                 chainId: targetChainId,
                                 chainName: "Sepolia Test Network",
-                                rpcUrls: ["https://1rpc.io/sepolia", "https://rpc.sepolia.org"],
+                                rpcUrls: [
+                                    "https://ethereum-sepolia-rpc.publicnode.com",
+                                    "https://rpc2.sepolia.org",
+                                    "https://1rpc.io/sepolia",
+                                    "https://sepolia.drpc.org"
+                                ],
                                 nativeCurrency: {
                                     name: "Sepolia ETH",
                                     symbol: "ETH",

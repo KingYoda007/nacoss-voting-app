@@ -14,82 +14,110 @@ export const Web3Provider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [contractOwner, setContractOwner] = useState('');
+    const [networkName, setNetworkName] = useState('Unknown');
     const { showToast } = useToast();
 
+    // 1. Helper: Shorten Address
     const shortenAddress = (address) => {
         if (!address) return '';
         return `${address.slice(0, 5)}...${address.slice(address.length - 4)}`;
     };
 
-    const checkOwner = async (providerOrSigner, account) => {
-        try {
-            if (!providerOrSigner) return;
-            // Use read-only provider if signer not available, but prefer signer
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, VotingSystemABI.abi, providerOrSigner);
-            const owner = await contract.owner();
-            setContractOwner(owner);
-
-            const isOwner = owner.toLowerCase() === account.toLowerCase();
-            setIsAdmin(isOwner);
-            console.log("Admin Check:", isOwner, "(Owner:", owner, "Account:", account, ")");
-        } catch (error) {
-            console.error("Failed to fetch contract owner:", error);
-        }
-    };
-
+    // 2. Helper: Switch Network (Sepolia)
     const switchNetwork = async () => {
+        const targetChainId = "0xaa36a7"; // Sepolia (11155111) hex
         try {
-            const provider = await detectEthereumProvider();
-            if (!provider) return false;
-
-            // Check if we are on the correct network (Sepolia: 11155111 -> 0xaa36a7)
-            const chainId = await provider.request({ method: 'eth_chainId' });
-            if (chainId !== '0xaa36a7') {
+            await window.ethereum.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: targetChainId }],
+            });
+            return true;
+        } catch (switchError) {
+            // This error code indicates that the chain has not been added to MetaMask.
+            if (switchError.code === 4902) {
                 try {
-                    await provider.request({
-                        method: 'wallet_switchEthereumChain',
-                        params: [{ chainId: '0xaa36a7' }],
+                    await window.ethereum.request({
+                        method: "wallet_addEthereumChain",
+                        params: [
+                            {
+                                chainId: targetChainId,
+                                chainName: "Sepolia Test Network",
+                                rpcUrls: ["https://1rpc.io/sepolia", "https://rpc.sepolia.org"],
+                                nativeCurrency: {
+                                    name: "Sepolia ETH",
+                                    symbol: "ETH",
+                                    decimals: 18,
+                                },
+                                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+                            },
+                        ],
                     });
                     return true;
-                } catch (switchError) {
-                    // This error code indicates that the chain has not been added to MetaMask.
-                    if (switchError.code === 4902 || switchError.code === -32603) {
-                        try {
-                            await provider.request({
-                                method: 'wallet_addEthereumChain',
-                                params: [
-                                    {
-                                        chainId: '0xaa36a7',
-                                        chainName: 'Sepolia Testnet',
-                                        rpcUrls: ['https://rpc.sepolia.org'],
-                                        nativeCurrency: {
-                                            name: 'SepoliaETH',
-                                            symbol: 'ETH',
-                                            decimals: 18,
-                                        },
-                                        blockExplorerUrls: ['https://sepolia.etherscan.io'],
-                                    },
-                                ],
-                            });
-                            return true;
-                        } catch (addError) {
-                            showToast("Failed to add Sepolia network: " + addError.message, "error");
-                            return false;
-                        }
-                    } else {
-                        throw switchError;
-                    }
+                } catch (addError) {
+                    console.error("Failed to add network:", addError);
+                    showToast("Failed to add Sepolia network.", "error");
+                    return false;
                 }
             }
-            return true;
-        } catch (error) {
-            console.error("Failed to switch network:", error);
-            // Don't block connection, but warn
-            showToast("Warning: You might be on the wrong network. Please connect to Sepolia.", "info");
+            console.error("Failed to switch network:", switchError);
+            showToast("Failed to switch to Sepolia.", "error");
             return false;
         }
     };
 
+    // 3. Helper: Check Owner (Admin Status)
+    const checkOwner = async (prov, account, retryCount = 0) => {
+        try {
+            const signer = await prov.getSigner();
+            const votingContract = new ethers.Contract(CONTRACT_ADDRESS, VotingSystemABI.abi, signer);
+
+            console.log(`Checking owner for: ${account}`);
+
+            const owner = await votingContract.owner().catch(err => {
+                console.warn("Contract owner() call failed/reverted:", err);
+                return null;
+            });
+
+            if (owner) {
+                setContractOwner(owner);
+                if (owner.toLowerCase() === account.toLowerCase()) {
+                    setIsAdmin(true);
+                    console.log("Admin Privileges Granted.");
+                } else {
+                    setIsAdmin(false);
+                    console.log("User is standard voter.");
+                }
+            } else {
+                console.log("Could not retrieve owner. Contract might not be deployed or ABI mismatch.");
+                if (retryCount < 3) {
+                    setTimeout(() => checkOwner(prov, account, retryCount + 1), 1000);
+                }
+            }
+        } catch (error) {
+            console.error("Error checking owner:", error);
+        }
+    };
+
+    // 4. Helper: Check Network Name
+    const checkNetwork = async (prov) => {
+        if (!prov) return;
+        try {
+            const network = await prov.getNetwork();
+            const chainId = network.chainId; // bigint
+
+            if (chainId === 11155111n) setNetworkName("Sepolia");
+            else if (chainId === 1n) setNetworkName("Mainnet");
+            else if (chainId === 1337n) setNetworkName("Ganache (Local)");
+            else if (chainId === 31337n) setNetworkName("Hardhat (Local)");
+            else setNetworkName("Unknown Network");
+
+        } catch (err) {
+            console.error("Network check failed:", err);
+            setNetworkName("Unknown");
+        }
+    };
+
+    // 5. Main: Check if Wallet Connected
     const checkIfWalletIsConnected = async () => {
         try {
             const provider = await detectEthereumProvider({ silent: true });
@@ -99,7 +127,6 @@ export const Web3Provider = ({ children }) => {
                 return;
             }
 
-            // Check if explicitly disconnected
             if (localStorage.getItem('walletDisconnected') === 'true') {
                 console.log("Wallet explicitly disconnected by user.");
                 return;
@@ -108,29 +135,28 @@ export const Web3Provider = ({ children }) => {
             const accounts = await provider.request({ method: 'eth_accounts' });
 
             if (accounts.length) {
-                // FORCE network switch before setting state
                 const isCorrectNetwork = await switchNetwork();
                 if (!isCorrectNetwork) return;
 
                 const account = accounts[0];
                 setCurrentAccount(account);
 
-                // Initialize provider/signer
                 const _provider = new ethers.BrowserProvider(provider);
                 const _signer = await _provider.getSigner();
                 setProvider(_provider);
                 setSigner(_signer);
 
-                // Check Admin Status
                 checkOwner(_provider, account);
+                checkNetwork(_provider);
             }
         } catch (error) {
             console.log("Web3Context: Wallet Check Error", error);
         }
     };
 
+    // 6. Main: Connect Wallet
     const connectWallet = async () => {
-        localStorage.removeItem('walletDisconnected'); // Reset flag
+        localStorage.removeItem('walletDisconnected');
         try {
             const provider = await detectEthereumProvider();
 
@@ -139,7 +165,6 @@ export const Web3Provider = ({ children }) => {
                 return;
             }
 
-            // 1. Ensure correct network
             const isCorrectNetwork = await switchNetwork();
             if (!isCorrectNetwork) return;
 
@@ -154,29 +179,21 @@ export const Web3Provider = ({ children }) => {
             setSigner(_signer);
 
             await checkOwner(_provider, account);
+            await checkNetwork(_provider);
 
             setIsLoading(false);
-
-            console.log("Web3Context: Wallet Check Successful", account);
             showToast("Wallet Connected!", "success");
             return account;
         } catch (error) {
             console.error("Wallet connection error:", error);
             setIsLoading(false);
-
-            // Handle specific MetaMask/Provider errors
             if (error.message && error.message.includes("wallet must has at least one account")) {
                 try {
-                    // ALERT FOR DEBUGGING
                     showToast("Debug: Wallet Empty. Attempting to force Permission Popup...", "info");
-
-                    // FORCE the popup to appear by requesting permissions
                     await window.ethereum.request({
                         method: "wallet_requestPermissions",
                         params: [{ eth_accounts: {} }],
                     });
-
-                    // If successful (user created/selected account), try connecting again
                     const newAccounts = await window.ethereum.request({ method: "eth_requestAccounts" });
                     setCurrentAccount(newAccounts[0]);
                     setIsLoading(false);
@@ -184,13 +201,10 @@ export const Web3Provider = ({ children }) => {
                 } catch (permError) {
                     console.error("Permission request failed", permError);
                     showToast("Debug: Popup failed or rejected.", "error");
-                    // If they cancelled the popup, then throw the empty wallet error
                     throw new Error("EMPTY_WALLET");
                 }
             }
 
-            // Fallback: If generic error or user rejected (sometimes purely UI sync issue), 
-            // try forcing the Permissions UI which often wakes up MetaMask.
             if (error.code === -32002 || (error.message && error.message.includes("Already processing"))) {
                 throw new Error("MetaMask is pending! Click the extension icon.");
             }
@@ -199,35 +213,40 @@ export const Web3Provider = ({ children }) => {
         }
     };
 
+    // 7. Main: Disconnect
     const disconnectWallet = () => {
         setCurrentAccount('');
         setIsAdmin(false);
         setContractOwner('');
-        localStorage.setItem('walletDisconnected', 'true'); // Flag to prevent auto-reconnect
+        setNetworkName('Unknown');
+        localStorage.setItem('walletDisconnected', 'true');
         console.log("Wallet Disconnected via App");
-        window.location.reload(); // Reload to clear state
+        window.location.reload();
     };
 
+    // 8. Lifecycle
     useEffect(() => {
         checkIfWalletIsConnected();
 
         if (window.ethereum) {
             window.ethereum.on('accountsChanged', (accounts) => {
-                if (accounts.length > 0) {
-                    setCurrentAccount(accounts[0]);
-                    // Re-check owner on account change
-                    // Note: Ideally we re-instantiate provider but simple reload is often safer for sync
-                    window.location.reload();
+                if (!accounts || accounts.length === 0) {
+                    disconnectWallet();
                 } else {
-                    setCurrentAccount('');
-                    setIsAdmin(false);
+                    // Optional: reload or update context
+                    window.location.reload();
                 }
             });
+            window.ethereum.on('chainChanged', () => window.location.reload());
         }
+
+        return () => {
+            // Cleanup listeners if needed (ethers.js handles some, but raw ethereum events persist)
+        };
     }, []);
 
     return (
-        <Web3Context.Provider value={{ connectWallet, disconnectWallet, currentAccount, provider, signer, isLoading, shortenAddress, isAdmin }}>
+        <Web3Context.Provider value={{ connectWallet, disconnectWallet, currentAccount, provider, signer, isLoading, shortenAddress, isAdmin, networkName }}>
             {children}
         </Web3Context.Provider>
     );

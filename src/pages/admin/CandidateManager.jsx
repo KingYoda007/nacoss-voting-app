@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Web3Context } from '../../context/Web3Context';
 import { useContract } from '../../hooks/useContract';
-import { UserPlus, Image, FileText, Search, Trash2 } from 'lucide-react';
+import { UserPlus, Image, FileText, Search, Trash2, Mail, Edit2 } from 'lucide-react';
 import { supabase } from '../../utils/supabaseClient';
 import { useToast } from '../../context/ToastContext';
 
@@ -19,6 +19,7 @@ const CandidateManager = () => {
 
     const [form, setForm] = useState({
         name: '',
+        email: '',
         info: '',
         imageUrl: ''
     });
@@ -37,7 +38,7 @@ const CandidateManager = () => {
 
     const fetchElections = async () => {
         try {
-            const { data, error } = await supabase.from('elections').select('*').eq('isActive', true);
+            const { data, error } = await supabase.from('elections').select('*').order('id', { ascending: false });
             if (error) throw error;
             setElections(data || []);
         } catch (err) {
@@ -123,6 +124,7 @@ const CandidateManager = () => {
                     position_id: selectedPosition,
                     contract_candidate_id: Number(newContractId),
                     name: form.name,
+                    email: form.email,
                     info: form.info,
                     ipfsImageUrl: form.imageUrl,
                     voteCount: 0
@@ -132,7 +134,7 @@ const CandidateManager = () => {
             if (error) console.error("Supabase Save Error:", error);
 
             showToast("Candidate registered successfully!", "success");
-            setForm({ name: '', info: '', imageUrl: '' });
+            setForm({ name: '', email: '', info: '', imageUrl: '' });
             fetchCandidates(selectedElection, selectedPosition);
         } catch (err) {
             console.error(err);
@@ -197,6 +199,14 @@ const CandidateManager = () => {
                                 </div>
 
                                 <div className="form-group">
+                                    <label>Email Address</label>
+                                    <div className="input-icon">
+                                        <Mail size={16} />
+                                        <input type="email" required placeholder="Candidate's login email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                                    </div>
+                                </div>
+
+                                <div className="form-group">
                                     <label>Manifesto / Bio</label>
                                     <div className="input-icon">
                                         <FileText size={16} />
@@ -238,61 +248,84 @@ const CandidateManager = () => {
                 {/* List Section */}
                 <div className="list-section">
                     <div className="list-header glass-panel">
+                        <h3>Added Candidates ({candidates.length})</h3>
                         <div className="search-bar">
-                            <Search size={18} />
-                            <input placeholder="Search candidate..." />
+                            <Search size={16} />
+                            <input placeholder="Search..." />
                         </div>
-                        <span>{candidates.length} Registered</span>
                     </div>
 
-                    <div className="candidates-grid">
+                    <div className="candidates-list">
                         {candidates.map(c => (
-                            <div key={c.id} className="candidate-card glass-panel card-hover">
-                                <img src={c.ipfsImageUrl} alt={c.name} className="candidate-img" />
-                                <div className="candidate-info">
-                                    <h4>{c.name}</h4>
-                                    <p>{c.info}</p>
-                                    <span className="badge active" style={{ marginTop: '0.5rem', display: 'inline-block' }}>{c.voteCount} Votes</span>
+                            <div key={c.id} className="candidate-item glass-panel">
+                                <div className="c-avatar">
+                                    <img src={c.ipfsImageUrl || 'https://via.placeholder.com/80'} alt={c.name} />
                                 </div>
-                                <button className="delete-btn" onClick={() => handleDeleteCandidate(c.id)}><Trash2 size={16} /></button>
+                                <div className="c-info">
+                                    <h4>{c.name}</h4>
+                                    <span className="c-pos">{positions.find(p => p.id === c.position_id)?.name || 'Unknown Position'}</span>
+                                    <small className="c-email">{c.email}</small>
+                                </div>
+                                <div className="c-actions">
+                                    {/* Placeholder Edit */}
+                                    <button className="icon-btn-sm edit" title="Edit"><Edit2 size={16} /></button>
+                                    <button className="icon-btn-sm delete" onClick={() => handleDeleteCandidate(c.id)} title="Delete"><Trash2 size={16} /></button>
+                                </div>
                             </div>
                         ))}
-                        {candidates.length === 0 && selectedPosition && (
-                            <div className="empty-state">No candidates yet. Add one!</div>
+                        {candidates.length === 0 && (
+                            <div className="empty-state">
+                                <p>No candidates found. Select a position to add some.</p>
+                            </div>
                         )}
                     </div>
                 </div>
             </div>
 
             <style>{`
-                .candidate-layout { display: grid; grid-template-columns: 350px 1fr; gap: 2rem; margin-top: 2rem; }
+                .content-area { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+                .candidate-layout { display: grid; grid-template-columns: 1fr 1.5fr; gap: 2rem; margin-top: 1rem; }
                 
-                .form-card { padding: 2rem; border-radius: 16px; height: fit-content; }
-                .form-group { margin-bottom: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-muted); font-size: 0.9rem; }
+                .form-card { padding: 2rem; border-radius: 16px; background: white; border: 1px solid var(--border-color); }
+                .form-card h3 { margin-bottom: 1.5rem; font-size: 1.25rem; }
                 
-                .select-input { width: 100%; }
-                .input-icon { display: flex; align-items: center; gap: 0.5rem; background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; padding-left: 0.8rem; color: var(--text-main); }
-                .input-icon input { border: none; background: transparent; padding-left: 0; padding: 0.8rem 0; width: 100%; color: inherit; }
-                .input-icon input:focus { outline: none; }
+                .form-group { margin-bottom: 1.25rem; }
+                .form-group label { display: block; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 500; color: var(--text-main); }
                 
-                .image-preview img { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-top: 0.5rem; border: 1px solid var(--border-color); }
-                .hint-text { font-size: 0.9rem; color: var(--text-muted); text-align: center; margin-top: 2rem; }
-
+                .select-input, .input-icon { width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color); background: #fff; font-size: 0.95rem; }
+                .input-icon { display: flex; align-items: center; gap: 0.75rem; padding-left: 1rem; }
+                .input-icon input { border: none; outline: none; width: 100%; font-size: 0.95rem; }
+                
                 .list-section { display: flex; flex-direction: column; gap: 1rem; }
-                .list-header { padding: 1rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
-                .search-bar { display: flex; align-items: center; gap: 0.5rem; background: #ffffff; padding: 0.5rem 1rem; border-radius: 20px; width: 300px; border: 1px solid var(--border-color); }
-                .search-bar input { background: transparent; border: none; color: var(--text-main); width: 100%; padding: 0; }
-                .search-bar input:focus { outline: none; box-shadow: none; border: none; }
-
-                .candidates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
-                .candidate-card { padding: 1rem; border-radius: 12px; position: relative; display: flex; flex-direction: column; gap: 0.5rem; }
-                .candidate-img { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; }
-                .candidate-info h4 { margin: 0; font-size: 1.1rem; }
-                .candidate-info p { margin: 0; font-size: 0.85rem; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-                .vote-badge { background: var(--accent); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; width: fit-content; margin-top: 0.5rem; }
+                .list-header { padding: 1rem 1.5rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+                .list-header h3 { margin: 0; font-size: 1.1rem; }
                 
-                .delete-btn { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.5); border: none; color: #ef4444; padding: 0.5rem; border-radius: 50%; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
-                .candidate-card:hover .delete-btn { opacity: 1; }
+                .search-bar { display: flex; align-items: center; gap: 0.5rem; background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 99px; width: 200px; }
+                .search-bar input { background: transparent; border: none; outline: none; font-size: 0.9rem; width: 100%; }
+
+                .candidates-list { display: flex; flex-direction: column; gap: 1rem; }
+                .candidate-item { display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: 12px; border: 1px solid var(--border-color); transition: all 0.2s; }
+                .candidate-item:hover { border-color: var(--primary-light); background: #f8fafc; }
+                
+                .c-avatar { width: 50px; height: 50px; border-radius: 50%; overflow: hidden; border: 2px solid var(--border-color); flex-shrink: 0; }
+                .c-avatar img { width: 100%; height: 100%; object-fit: cover; }
+                
+                .c-info { flex: 1; }
+                .c-info h4 { margin: 0 0 0.2rem 0; font-size: 1rem; color: var(--text-main); }
+                .c-pos { display: block; font-size: 0.85rem; color: var(--primary); font-weight: 500; }
+                .c-email { display: block; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; }
+
+                .c-actions { display: flex; gap: 0.5rem; }
+                .icon-btn-sm { width: 32px; height: 32px; border-radius: 6px; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+                .icon-btn-sm.edit { background: #eff6ff; color: #2563eb; }
+                .icon-btn-sm.edit:hover { background: #dbeafe; }
+                .icon-btn-sm.delete { background: #fef2f2; color: #ef4444; }
+                .icon-btn-sm.delete:hover { background: #fee2e2; }
+
+                .image-preview img { width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-top: 0.5rem; border: 1px solid var(--border-color); }
+                .hint-text { text-align: center; color: var(--text-muted); margin-top: 2rem; }
+                
+                .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
             `}</style>
         </div>
     );

@@ -1,191 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, ArrowRight, UserPlus, LogIn, Loader2 } from 'lucide-react';
+import React from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { ShieldCheck, User, Users, Lock, ChevronRight } from 'lucide-react';
 import logo from '../assets/logo.jpg';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 
 const LandingPage = () => {
     const navigate = useNavigate();
-    const { login, signup, user } = useAuth();
-    const { showToast } = useToast();
+    const { user } = useAuth();
 
-    const [isLogin, setIsLogin] = useState(true);
-    const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({ email: '', password: '' });
-
-    // Redirect if already logged in
-    useEffect(() => {
-        if (user) {
-            navigate('/voter');
-        }
-    }, [user, navigate]);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!formData.email || !formData.password) {
-            return showToast("Please fill in all fields", "error");
-        }
-
-        setLoading(true);
-        try {
-            if (isLogin) {
-                await login(formData.email, formData.password, 'voter');
-                navigate('/voter');
-            } else {
-                await signup(formData.email, formData.password, 'voter');
-                // Usually signup confirms session or requires verify
-                // Supabase default: if email confirm is off, it logs in.
-                // If on, it asks to check email. We assume auto-login or "Check email".
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // If already logged in, show "Go to Dashboard" instead of login options
+    // But we need to know WHICH dashboard. For now, assuming standard flow.
 
     return (
-        <div className="landing-page">
-            <div className="landing-container">
-                <header className="landing-header">
-                    <img src={logo} alt="NACOSS Logo" className="landing-logo" />
-                    <h1>NACOSS General Elections</h1>
-                    <p>Secure Voting Portal</p>
-                </header>
+        <div className="landing-page animate-fade-in">
+            <header className="navbar glass-panel">
+                <div className="brand">
+                    <img src={logo} alt="NACOSS" className="nav-logo" />
+                    <span>NACOSS Voting</span>
+                </div>
+                {user ? (
+                    <Link to="/voter" className="btn-primary-sm">Go to Dashboard</Link>
+                ) : (
+                    <div style={{ width: '20px' }}></div>
+                )}
+            </header>
 
-                <div className="auth-card glass-panel animate-fade-in">
-                    <div className="auth-header">
-                        <h2>{isLogin ? 'Student Login' : 'Create Account'}</h2>
-                        <p>{isLogin ? 'Enter your credentials to access the voting booth.' : 'Register to participate in the upcoming elections.'}</p>
-                    </div>
+            <main className="hero-section">
+                <div className="hero-content">
+                    <h1>Secure Digital Democracy</h1>
+                    <p className="hero-subtitle">The official blockchain-powered voting platform for the National Association of Computer Science Students.</p>
 
-                    <form onSubmit={handleSubmit} className="auth-form">
-                        <div className="input-group">
-                            <Mail size={18} className="input-icon" />
-                            <input
-                                type="email"
-                                placeholder="Student Email"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div className="input-group">
-                            <Lock size={18} className="input-icon" />
-                            <input
-                                type="password"
-                                placeholder="Password"
-                                value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                required
-                            />
+                    <div className="role-cards">
+                        {/* Voter Card */}
+                        <div className="role-card glass-panel hover-scale" onClick={() => navigate('/voter/login')}>
+                            <div className="icon-box blue">
+                                <Users size={32} />
+                            </div>
+                            <h3>Student Voter</h3>
+                            <p>Cast your vote securely using your student credentials.</p>
+                            <span className="card-link">Login to Vote <ChevronRight size={16} /></span>
                         </div>
 
-                        <button type="submit" className="auth-btn" disabled={loading}>
-                            {loading ? (
-                                <Loader2 className="spin" size={20} />
-                            ) : (
-                                <>
-                                    {isLogin ? 'Sign In' : 'Register'}
-                                    <ArrowRight size={18} />
-                                </>
-                            )}
-                        </button>
-                    </form>
+                        {/* Candidate Card */}
+                        <div className="role-card glass-panel hover-scale" onClick={() => navigate('/candidate/login')}>
+                            <div className="icon-box green">
+                                <User size={32} />
+                            </div>
+                            <h3>Candidate</h3>
+                            <p>Manage your campaign, manifesto, and view live results.</p>
+                            <span className="card-link">Candidate Portal <ChevronRight size={16} /></span>
+                        </div>
 
-                    <div className="auth-footer">
-                        <p>
-                            {isLogin ? "Don't have an account? " : "Already have an account? "}
-                            <button className="text-link" onClick={() => setIsLogin(!isLogin)}>
-                                {isLogin ? 'Register Here' : 'Login Here'}
-                            </button>
-                        </p>
+                        {/* Admin Card Removed - Accessible via /admin/login */}
                     </div>
                 </div>
+            </main>
 
-                <footer className="landing-footer">
-                    <p>&copy; {new Date().getFullYear()} NACOSS. All rights reserved.</p>
-                </footer>
-            </div>
+            <footer className="simple-footer">
+                <p>&copy; {new Date().getFullYear()} NACOSS FUPRE Chapter. Secured by Ethereum Blockchain.</p>
+            </footer>
 
             <style>{`
-                .landing-page {
-                    min-height: 100vh;
-                    background: var(--bg-main);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 2rem;
-                }
-                .landing-container {
-                    width: 100%;
-                    max-width: 450px;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                }
-                .landing-header { text-align: center; margin-bottom: 2rem; }
-                .landing-logo { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 1rem; box-shadow: var(--shadow-md); border: 2px solid white; }
-                .landing-header h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--text-main); }
-                .landing-header p { color: var(--text-muted); }
+                .landing-page { cursor: default; min-height: 100vh; background: var(--bg-gradient); display: flex; flex-direction: column; }
+                
+                .navbar { padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; margin: 1rem 2rem; border-radius: 16px; }
+                .brand { display: flex; align-items: center; gap: 0.8rem; font-weight: 700; font-size: 1.1rem; color: var(--text-main); }
+                .nav-logo { width: 40px; height: 40px; border-radius: 50%; }
+                .btn-primary-sm { background: var(--primary); color: white; padding: 0.5rem 1rem; border-radius: 8px; text-decoration: none; font-size: 0.9rem; }
 
-                .auth-card {
-                    width: 100%;
-                    padding: 2rem;
-                    border-radius: 24px;
-                    background: white;
-                    box-shadow: var(--shadow-xl);
-                }
-                .auth-header { text-align: center; margin-bottom: 2rem; }
-                .auth-header h2 { margin-bottom: 0.5rem; font-size: 1.3rem; }
-                .auth-header p { font-size: 0.9rem; color: var(--text-muted); }
+                .hero-section { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+                .hero-content { max-width: 1000px; text-align: center; }
+                .hero-content h1 { font-size: 3rem; margin-bottom: 1rem; background: linear-gradient(135deg, #1e293b 0%, #3b82f6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                .hero-subtitle { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 4rem; max-width: 600px; margin-left: auto; margin-right: auto; }
 
-                .auth-form { display: flex; flex-direction: column; gap: 1rem; }
-                .input-group { position: relative; }
-                .input-icon { position: absolute; left: 1rem; top: 1rem; color: var(--text-muted); }
-                .input-group input {
-                    width: 100%;
-                    padding: 1rem 1rem 1rem 2.8rem;
-                    border-radius: 12px;
-                    border: 1px solid var(--border-color);
-                    background: #f8fafc;
-                    font-size: 0.95rem;
-                    transition: all 0.2s;
-                }
-                .input-group input:focus {
-                    background: white;
-                    border-color: var(--primary);
-                    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-                    outline: none;
-                }
+                .role-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; }
+                .role-card { padding: 2rem; border-radius: 20px; text-align: left; cursor: pointer; transition: all 0.3s; border: 1px solid rgba(255,255,255,0.5); }
+                .role-card:hover { transform: translateY(-5px); border-color: var(--primary); box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.15); }
+                
+                .icon-box { width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; }
+                .blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+                .green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+                .purple { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
 
-                .auth-btn {
-                    margin-top: 1rem;
-                    background: var(--primary);
-                    color: white;
-                    border: none;
-                    padding: 1rem;
-                    border-radius: 12px;
-                    font-weight: 600;
-                    font-size: 1rem;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 0.5rem;
-                    transition: all 0.2s;
-                }
-                .auth-btn:hover:not(:disabled) { background: var(--primary-dark); transform: translateY(-1px); }
-                .auth-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+                .role-card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; color: var(--text-main); }
+                .role-card p { width: 100%; color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem; line-height: 1.5; }
+                
+                .card-link { display: flex; align-items: center; gap: 0.5rem; color: var(--primary); font-weight: 600; font-size: 0.9rem; }
 
-                .auth-footer { margin-top: 1.5rem; text-align: center; font-size: 0.9rem; color: var(--text-muted); }
-                .text-link { background: none; border: none; color: var(--primary); font-weight: 600; cursor: pointer; padding: 0; margin-left: 0.3rem; }
-                .text-link:hover { text-decoration: underline; }
-
-                .landing-footer { margin-top: 2rem; color: var(--text-muted); font-size: 0.8rem; opacity: 0.7; }
-                .spin { animation: spin 1s linear infinite; }
-                @keyframes spin { 100% { transform: rotate(360deg); } }
+                .simple-footer { text-align: center; padding: 2rem; color: var(--text-light); font-size: 0.9rem; }
             `}</style>
         </div>
     );

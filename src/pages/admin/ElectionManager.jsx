@@ -30,11 +30,23 @@ const ElectionManager = () => {
             setLoading(true);
             const { data, error } = await supabase
                 .from('elections')
-                .select('*')
+                .select(`
+                    *,
+                    candidates(count),
+                    votes(count)
+                `)
                 .order('id', { ascending: false });
 
             if (error) throw error;
-            setElections(data || []);
+
+            // Transform data to flatten counts
+            const electionsWithCounts = (data || []).map(e => ({
+                ...e,
+                candidateCount: e.candidates?.[0]?.count || 0,
+                voteCount: e.votes?.[0]?.count || 0
+            }));
+
+            setElections(electionsWithCounts);
         } catch (err) {
             console.error("Fetch elections error:", err);
             // Fallback: If DB empty/error, try contract (optional, or just show error)
@@ -109,12 +121,7 @@ const ElectionManager = () => {
             await tx.wait();
 
             // 2. Add to Supabase
-            // We need the blockchain ID for consistency, but for now we can just use mapping
-            // Contract uses auto-increment ID per election.
-            // Let's assume we can fetch the position ID or just re-fetch positions from chain to sync? 
-            // Or simpler: Just insert name and election_id. Contract ID is needed for voting though.
-
-            // To be precise: We should get the new ID.
+            // We should get the new ID.
             const posIds = await contract.getPositionIds(selectedElection.id);
             const newContractId = posIds[posIds.length - 1]; // Last added
 
@@ -153,8 +160,6 @@ const ElectionManager = () => {
 
         try {
             // 1. Update Blockchain
-            // Since we are only allowing stopping (true -> false), we pass false (or the inverse of currentStatus which is boolean)
-            // But logic says: next status is !currentStatus
             const nextStatus = !currentStatus;
 
             const tx = await contract.toggleElectionStatus(electionId, nextStatus);
@@ -187,7 +192,6 @@ const ElectionManager = () => {
         <div className="content-area">
             {!selectedElection ? (
                 <>
-
                     {/* Main List View */}
                     <div className="page-header" style={{ marginBottom: '2rem' }}>
                         <div className="page-title">
@@ -200,36 +204,71 @@ const ElectionManager = () => {
                     </div>
 
                     <div className="elections-grid">
-                        {elections.map((el) => (
-                            <div key={el.id} className="election-card glass-panel card-hover">
-                                <div className="card-header">
-                                    <span className={`badge ${el.isActive ? 'active' : 'inactive'}`}>
-                                        {el.isActive ? 'Active' : 'Ended'}
-                                    </span>
-                                    <div className="actions">
-                                        <button className="icon-btn" onClick={() => handleManageElection(el)}>
-                                            <Settings size={18} />
+                        {elections.map((el) => {
+                            const now = Date.now() / 1000;
+                            let status = 'Active';
+                            let badgeClass = 'badge-active';
+
+                            if (!el.isActive) {
+                                status = 'Inactive';
+                                badgeClass = 'badge-inactive';
+                            } else if (now < el.startTime) {
+                                status = 'Scheduled';
+                                badgeClass = 'badge-pending';
+                            } else if (now > el.endTime) {
+                                status = 'Ended';
+                                badgeClass = 'badge-ended';
+                            }
+
+                            return (
+                                <div key={el.id} className="election-card glass-panel">
+                                    <div className="card-top">
+                                        <h3>{el.name}</h3>
+                                        <span className={`status-pill ${badgeClass}`}>{status}</span>
+                                    </div>
+
+                                    <div className="date-info">
+                                        <Calendar size={14} />
+                                        <span>
+                                            {new Date(el.startTime * 1000).toLocaleDateString()} - {new Date(el.endTime * 1000).toLocaleDateString()}
+                                        </span>
+                                    </div>
+
+                                    <div className="stats-container">
+                                        <div className="stat-box blue-border">
+                                            <label>Candidates</label>
+                                            <span className="stat-val blue-text">{el.candidateCount}</span>
+                                        </div>
+                                        <div className="stat-box purple-border">
+                                            <label>Total Votes</label>
+                                            <span className="stat-val purple-text">{el.voteCount}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="card-actions">
+                                        {el.isActive && status !== 'Ended' ? (
+                                            <button
+                                                className="action-btn btn-red"
+                                                onClick={() => toggleStatus(el.id, el.isActive)}
+                                            >
+                                                <XCircle size={16} /> End Election
+                                            </button>
+                                        ) : (
+                                            <button className="action-btn btn-disabled" disabled>
+                                                Election Closed
+                                            </button>
+                                        )}
+
+                                        <button
+                                            className="action-btn btn-blue"
+                                            onClick={() => handleManageElection(el)}
+                                        >
+                                            <Settings size={16} /> View Details
                                         </button>
                                     </div>
                                 </div>
-                                <div className="card-content">
-                                    <h3>{el.name}</h3>
-                                    <div className="card-details">
-                                        <div className="detail-row">
-                                            <Calendar size={14} className="text-light" />
-                                            <span>{new Date(el.startTime * 1000).toLocaleDateString()}</span>
-                                        </div>
-                                        <div className="detail-row">
-                                            <Clock size={14} className="text-light" />
-                                            <span>{new Date(el.endTime * 1000).toLocaleTimeString()}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button className="manage-btn" onClick={() => handleManageElection(el)}>
-                                    Manage Configuration <ArrowRight size={16} />
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
 
                         {elections.length === 0 && !loading && (
                             <div className="empty-state">
@@ -247,14 +286,37 @@ const ElectionManager = () => {
                         <div className="header-content">
                             <div>
                                 <h1 style={{ marginBottom: '0.5rem' }}>{selectedElection.name}</h1>
-                                <span className={`badge ${selectedElection.isActive ? 'active' : 'inactive'}`}>
-                                    {selectedElection.isActive ? 'Live' : 'Closed'}
-                                </span>
+                                {(() => {
+                                    const now = Date.now() / 1000;
+                                    let status = 'Live';
+                                    let badgeClass = 'active';
+
+                                    if (!selectedElection.isActive) {
+                                        status = 'Closed';
+                                        badgeClass = 'inactive';
+                                    } else if (now < selectedElection.startTime) {
+                                        status = 'Scheduled';
+                                        badgeClass = 'pending'; // You might need to define 'pending' style if not global, but 'inactive' or specific class handles it
+                                    } else if (now > selectedElection.endTime) {
+                                        status = 'Ended';
+                                        badgeClass = 'inactive';
+                                    }
+
+                                    return (
+                                        <span className={`badge ${badgeClass}`}>
+                                            {status}
+                                        </span>
+                                    );
+                                })()}
                             </div>
                             <div className="status-toggle">
                                 {selectedElection.isActive ? (
-                                    <button className="btn-secondary" onClick={() => toggleStatus(selectedElection.id, selectedElection.isActive)} style={{ background: '#fecdd3', color: '#be123c', border: '1px solid #fecdd3' }}>
-                                        End Election Permanently
+                                    <button
+                                        className="btn-secondary"
+                                        onClick={() => toggleStatus(selectedElection.id, selectedElection.isActive)}
+                                        style={{ background: '#fecdd3', color: '#be123c', border: '1px solid #fecdd3' }}
+                                    >
+                                        {(Date.now() / 1000 > selectedElection.endTime) ? "Finalize & Close Election" : "End Election Permanently"}
                                     </button>
                                 ) : (
                                     <button className="btn-secondary" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
@@ -342,62 +404,69 @@ const ElectionManager = () => {
             )}
 
             <style>{`
-                .elections-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; }
-                .election-card { padding: 0; display: flex; flex-direction: column; overflow: hidden; height: 100%; min-height: 220px; }
-                
-                .card-header { padding: 1.25rem; display: flex; justify-content: space-between; align-items: flex-start; }
-                .card-content { px: 1.25rem; padding-bottom: 3.5rem; padding-left: 1.25rem; padding-right: 1.25rem; flex: 1; }
-                .card-content h3 { font-size: 1.25rem; margin-bottom: 0.75rem; }
+            .elections-grid {display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem; }
+            .election-card {padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; border-radius: 16px; border: 1px solid var(--border-color); background: white; transition: all 0.2s; }
+            .election-card:hover {transform: translateY(-5px); box-shadow: var(--shadow-xl); }
 
-                .card-details { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; color: var(--text-muted); }
-                .detail-row { display: flex; align-items: center; gap: 0.5rem; }
-                .text-light { color: var(--text-light); }
+            .card-top {display: flex; justify-content: space-between; align-items: flex-start; }
+            .card-top h3 {margin: 0; font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.4; max-width: 70%; }
 
-                .manage-btn { 
-                    margin-top: auto; 
-                    background: rgba(248, 250, 252, 0.5); 
-                    color: var(--primary); 
-                    border: none; 
-                    border-top: 1px solid var(--border-color);
-                    padding: 1rem; 
-                    width: 100%; 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    cursor: pointer; 
-                    font-weight: 600;
-                    transition: all 0.2s;
-                }
-                .manage-btn:hover { background: var(--bg-main); color: var(--primary-dark); }
+            .status-pill {padding: 0.25rem 0.75rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+            .badge-active {background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+            .badge-inactive {background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+            .badge-pending {background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+            .badge-ended {background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
 
-                /* Modal */
-                .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-                .modal-content { width: 90%; max-width: 550px; padding: 2rem; border-radius: 24px; box-shadow: var(--shadow-xl); }
-                .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-                .close-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 0; }
-                
-                .form-group { margin-bottom: 1.25rem; }
-                .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-                
-                .modal-actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
+            .date-info {display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
 
-                /* Manage View */
-                .manage-view { animation: fadeIn 0.3s ease; }
-                .back-link { background: none; border: none; color: var(--text-muted); margin-bottom: 1rem; cursor: pointer; padding: 0; font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
-                .back-link:hover { color: var(--primary); }
-                
-                .manage-header { padding: 2rem; border-radius: 16px; margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center; }
-                .status-toggle { display: flex; align-items: center; gap: 1rem; }
-                
-                .manage-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
-                .section-card { padding: 1.5rem; border-radius: var(--radius); }
-                .add-form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
-                .add-form input { flex: 1; }
-                .list-group { list-style: none; padding: 0; margin: 0; }
-                .list-item { padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
-                .list-item:last-child { border-bottom: none; }
-                
-                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            .stats-container {display: flex; gap: 1rem; margin: 0.5rem 0; }
+            .stat-box {flex: 1; border: 1px solid; border-radius: 8px; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+            .stat-box label {font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+            .stat-val {font-size: 1.4rem; font-weight: 700; }
+
+            .blue-border {border-color: #bfdbfe; background: #eff6ff; }
+            .blue-text {color: #2563eb; }
+
+            .purple-border {border-color: #ddd6fe; background: #f5f3ff; }
+            .purple-text {color: #7c3aed; }
+
+            .card-actions {display: flex; gap: 0.75rem; margin-top: auto; }
+            .action-btn {flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+
+            .btn-red {background: #dc2626; color: white; }
+            .btn-red:hover {background: #b91c1c; }
+
+            .btn-blue {background: #2563eb; color: white; }
+            .btn-blue:hover {background: #1d4ed8; }
+
+            .btn-disabled {background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+
+            /* Modal & Other Styles inherited/preserved */
+            .page-header {display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+            .manage-view {animation: fadeIn 0.3s ease; }
+            .back-link {background: none; border: none; color: var(--text-muted); margin-bottom: 1rem; cursor: pointer; padding: 0; font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
+
+            /* Modal */
+            .modal-overlay {position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+            .modal-content {width: 90%; max-width: 550px; padding: 2rem; border-radius: 24px; box-shadow: var(--shadow-xl); background: white; }
+            .modal-header {display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+            .close-btn {background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 0; }
+
+            .form-group {margin-bottom: 1.25rem; }
+            .form-row {display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+            .modal-actions {display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
+
+            .manage-header {padding: 2rem; border-radius: 16px; margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center; }
+            .status-toggle {display: flex; align-items: center; gap: 1rem; }
+
+            .manage-grid {display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }
+            .section-card {padding: 1.5rem; border-radius: 16px; }
+            .add-form {display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+            .add-form input {flex: 1; padding: 0.75rem; border:1px solid var(--border-color); border-radius:8px;}
+            .list-group {list-style: none; padding: 0; margin: 0; }
+            .list-item {padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+
+            @keyframes fadeIn {from {opacity: 0; transform: translateY(10px); } to {opacity: 1; transform: translateY(0); } }
             `}</style>
         </div>
     );

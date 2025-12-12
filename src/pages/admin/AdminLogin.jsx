@@ -4,19 +4,12 @@ import { ShieldAlert, Lock, ArrowRight, Loader2, Mail } from 'lucide-react';
 import logo from '../../assets/logo.jpg';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { ADMIN_EMAILS } from '../../utils/adminList';
 
 const AdminLogin = () => {
     const navigate = useNavigate();
     const { login, user, loginType, logout } = useAuth(); // Destructuring loginType and logout
     const { showToast } = useToast();
-
-    // HARDCODED ADMIN ALLOWLIST - Using lowercase for validation
-    // TODO: Move this to Supabase 'profiles' table with 'role' column for production
-    const ADMIN_EMAILS = [
-        'admin@nacoss.com',
-        'elections@nacoss.com',
-        'kingsblanc@gmail.com'
-    ];
 
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({ email: '', password: '' });

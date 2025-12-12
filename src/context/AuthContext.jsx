@@ -43,6 +43,18 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password, type = 'voter') => {
         try {
+            // If logging in as candidate, verify email exists in candidates table first
+            if (type === 'candidate') {
+                const { data: candData, error: candError } = await supabase
+                    .from('candidates')
+                    .select('id')
+                    .eq('email', email)
+                    .maybeSingle();
+
+                if (candError) throw candError;
+                if (!candData) throw new Error("This email is not registered as a Candidate.");
+            }
+
             const { data, error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
@@ -63,13 +75,26 @@ export const AuthProvider = ({ children }) => {
 
     const signup = async (email, password, type = 'voter') => {
         try {
+            // 1. If Candidate, verify email is allowed (listed by Admin)
+            if (type === 'candidate') {
+                const { data: candData, error: candError } = await supabase
+                    .from('candidates')
+                    .select('id')
+                    .eq('email', email)
+                    .maybeSingle();
+
+                if (candError) throw candError;
+                if (!candData) throw new Error("This email is not authorized as a Candidate. Contact Admin.");
+            }
+
+            // 2. Create Auth User
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
             });
             if (error) throw error;
 
-            // Set Login Type (usually signups are voters)
+            // Set Login Type
             setLoginType(type);
             localStorage.setItem('loginType', type);
 
@@ -106,8 +131,21 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const resendConfirmation = async (email) => {
+        try {
+            const { error } = await supabase.auth.resend({
+                type: 'signup',
+                email: email,
+            });
+            if (error) throw error;
+            showToast("Confirmation email sent! Check your inbox.", "success");
+        } catch (error) {
+            showToast(error.message, "error");
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, loginType, login, signup, logout, loading }}>
+        <AuthContext.Provider value={{ user, loginType, login, signup, logout, resendConfirmation, loading }}>
             {children}
         </AuthContext.Provider>
     );

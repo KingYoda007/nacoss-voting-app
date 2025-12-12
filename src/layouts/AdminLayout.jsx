@@ -1,7 +1,7 @@
-import React, { useContext } from 'react'; // Added useContext
+import React, { useContext } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Vote, Users, UserPlus, LogOut, FileText, ShieldAlert } from 'lucide-react';
-import { Web3Context } from '../context/Web3Context'; // Import Context
+import { LayoutDashboard, Vote, Users, UserPlus, LogOut, FileText, ShieldAlert, Wallet } from 'lucide-react';
+import { Web3Context } from '../context/Web3Context';
 import { useAuth } from '../context/AuthContext';
 import logo from '../assets/logo.jpg';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -9,9 +9,8 @@ import WalletProfile from '../components/WalletProfile';
 
 const AdminLayout = () => {
     const navigate = useNavigate();
-    const { connectWallet, currentAccount, isAdmin, isLoading, disconnectWallet } = useContext(Web3Context); // Get context
-
-    const { logout } = useAuth(); // Import auth logout
+    const { connectWallet, currentAccount, isAdmin, isLoading, disconnectWallet, networkName } = useContext(Web3Context);
+    const { logout } = useAuth();
 
     const handleLogout = async () => {
         disconnectWallet();       // 1. Clear Wallet
@@ -44,7 +43,6 @@ const AdminLayout = () => {
 
     return (
         <div className="admin-layout">
-            {/* Sidebar */}
             {/* Sidebar */}
             <aside className="sidebar glass">
                 <div className="sidebar-header">
@@ -87,21 +85,34 @@ const AdminLayout = () => {
             </aside>
 
             {/* Main Content */}
-            {/* Main Content */}
             <main className="main-content">
                 <header className="top-bar glass" style={{ borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderRadius: 0 }}>
                     <h2>Admin Portal</h2>
-                    <div className="user-profile">
-                        {currentAccount ? (
-                            <WalletProfile
-                                address={currentAccount}
-                                onDisconnect={handleLogout}
-                            />
-                        ) : (
-                            <button className="btn-primary" onClick={connectWallet} style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-                                Connect Wallet
-                            </button>
+                    <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        {networkName && networkName !== 'Unknown' && (
+                            <div className="network-pill" style={{
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                background: 'rgba(255,255,255,0.5)', border: '1px solid var(--border-color)',
+                                padding: '0.3rem 0.8rem', borderRadius: '20px',
+                                fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)'
+                            }}>
+                                <span style={{ width: '6px', height: '6px', background: '#22c55e', borderRadius: '50%' }}></span>
+                                {networkName}
+                            </div>
                         )}
+
+                        <div className="user-profile">
+                            {currentAccount ? (
+                                <WalletProfile
+                                    address={currentAccount}
+                                    onDisconnect={handleLogout}
+                                />
+                            ) : (
+                                <button className="btn-primary" onClick={connectWallet} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                                    <Wallet size={16} /> Connect Wallet
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </header>
                 <div className="content-area">

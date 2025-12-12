@@ -70,8 +70,9 @@ const VoterResults = () => {
                         try {
                             if (cand.contract_candidate_id !== undefined) {
                                 const chainCand = await contract.candidates(cand.contract_candidate_id);
-                                const votes = Number(chainCand.voteCount || chainCand[4]);
-                                cand.voteCount = votes;
+                                const val = chainCand.voteCount ?? chainCand[4];
+                                const votes = Number(val);
+                                cand.voteCount = isNaN(votes) ? 0 : votes;
                             }
                         } catch (err) {
                             console.warn(`Failed to sync votes for ${cand.name}:`, err);
@@ -93,6 +94,25 @@ const VoterResults = () => {
 
     const handleRefresh = () => {
         if (selectedElectionId) fetchResults(selectedElectionId);
+    };
+
+    // Custom Tooltip for Recharts
+    const CustomTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            const data = payload[0].payload;
+            return (
+                <div className="custom-tooltip glass-panel" style={{ padding: '1rem', textAlign: 'center' }}>
+                    <img
+                        src={data.ipfsImageUrl || data.imageUrl}
+                        alt={data.name}
+                        style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', marginBottom: '0.5rem', border: '3px solid white', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
+                    />
+                    <h4 style={{ margin: '0', fontSize: '1rem', color: 'var(--text-main)' }}>{data.name}</h4>
+                    <p style={{ margin: '0.2rem 0', fontWeight: '700', color: 'var(--primary)', fontSize: '1.2rem' }}>{data.voteCount} Votes</p>
+                </div>
+            );
+        }
+        return null;
     };
 
     const COLORS = ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#16a34a'];
@@ -129,66 +149,81 @@ const VoterResults = () => {
                     <Activity size={32} className="spin" style={{ color: 'var(--primary)' }} />
                     <p>Fetching result data...</p>
                 </div>
-            ) : resultsData.length === 0 ? (
-                <div className="empty-state glass-panel">
-                    <p>No results found for this election.</p>
-                </div>
-            ) : (
-                <div className="results-grid">
-                    {resultsData.map((position, idx) => {
-                        const winner = position.candidates[0];
-                        const totalVotes = position.candidates.reduce((acc, c) => acc + c.voteCount, 0);
+            ) : (() => {
+                // Find selected election object
+                const currentElection = elections.find(e => e.id == selectedElectionId);
+                const now = Date.now() / 1000;
 
-                        return (
-                            <div key={position.id} className="position-result-card glass-panel">
-                                <div className="position-header">
-                                    <h3>{position.name}</h3>
-                                    <span className="badge">{totalVotes} Total Votes</span>
-                                </div>
+                // Show results if:
+                // 1. Election is manually marked inactive (!isActive)
+                // 2. OR Time has passed (now > endTime)
+                // Therefore, it IS ongoing (hidden results) ONLY if: isActive AND time remains
+                const isOngoing = currentElection && currentElection.isActive && now < currentElection.endTime;
 
-                                <div className="result-layout">
-                                    {/* Winner Spotlight */}
-                                    {winner && winner.voteCount > 0 && (
-                                        <div className="winner-spotlight">
-                                            <div className="winner-badge">
-                                                <Trophy size={16} fill="gold" color="goldenrod" />
-                                                <span>Leading</span>
+                if (!currentElection) return null;
+
+                if (isOngoing) {
+                    return (
+                        <div className="empty-state glass-panel animate-fade-in" style={{ textAlign: 'center', padding: '4rem' }}>
+                            <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '1.5rem', borderRadius: '50%', display: 'inline-flex', marginBottom: '1.5rem' }}>
+                                <Activity size={48} color="var(--primary)" />
+                            </div>
+                            <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Election in Progress</h2>
+                            <p style={{ fontSize: '1.1rem', color: 'var(--text-muted)', maxWidth: '500px', margin: '0 auto' }}>
+                                Results are hidden while voting is active to ensure fairness.
+                                Come back after <strong>{new Date(currentElection.endTime * 1000).toLocaleString()}</strong> to see the final tally.
+                            </p>
+                        </div>
+                    );
+                }
+
+                if (resultsData.length === 0) {
+                    return (
+                        <div className="empty-state glass-panel">
+                            <p>No results found to display.</p>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="results-grid animate-fade-in">
+                        {resultsData.map((position, idx) => {
+                            const winner = position.candidates[0];
+                            const totalVotes = position.candidates.reduce((acc, c) => acc + c.voteCount, 0);
+
+                            return (
+                                <div key={position.id} className="position-result-card glass-panel">
+                                    <div className="position-header">
+                                        <h3>{position.name}</h3>
+                                        <span className="badge">{totalVotes} Total Votes</span>
+                                    </div>
+
+                                    <div className="result-layout">
+                                        {/* Chart & List */}
+                                        <div className="chart-container">
+                                            <div style={{ width: '100%', height: 250, minWidth: 200 }}>
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <BarChart data={position.candidates} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                                                        <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} />
+                                                        <YAxis allowDecimals={false} />
+                                                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+                                                        <Bar dataKey="voteCount" radius={[4, 4, 0, 0]} barSize={40}>
+                                                            {position.candidates.map((entry, index) => (
+                                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                            ))}
+                                                        </Bar>
+                                                    </BarChart>
+                                                </ResponsiveContainer>
                                             </div>
-                                            <img src={winner.ipfsImageUrl || winner.imageUrl} alt={winner.name} className="winner-img" />
-                                            <div className="winner-info">
-                                                <h4>{winner.name}</h4>
-                                                <p className="vote-count">{winner.voteCount} Votes</p>
-                                                <div className="vote-bar">
-                                                    <div className="fill" style={{ width: `${(winner.voteCount / totalVotes) * 100}%` }}></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Chart & List */}
-                                    <div className="chart-container">
-                                        <div style={{ width: '100%', height: 200 }}>
-                                            <ResponsiveContainer>
-                                                <BarChart data={position.candidates} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.05)" />
-                                                    <XAxis type="number" hide />
-                                                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-                                                    <Tooltip cursor={{ fill: 'rgba(0,0,0,0.02)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                                    <Bar dataKey="voteCount" radius={[0, 4, 4, 0]} barSize={20}>
-                                                        {position.candidates.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                        ))}
-                                                    </Bar>
-                                                </BarChart>
-                                            </ResponsiveContainer>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+                            );
+                        })}
+                    </div>
+                );
+            })()}
 
             <style>{`
                 .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem; }

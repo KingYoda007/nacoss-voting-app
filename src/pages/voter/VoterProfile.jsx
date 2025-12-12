@@ -29,16 +29,13 @@ const VoterProfile = () => {
     const getProfile = async () => {
         try {
             setLoading(true);
-            const { data, error, status } = await supabase
+            const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', user.id)
-                .single();
+                .maybeSingle(); // Returns null if not found (instead of 406 error)
 
-            if (error && status !== 406) {
-                // 406 means no data returned (profile doesn't exist yet), which is fine
-                throw error;
-            }
+            if (error) throw error;
 
             if (data) {
                 setProfile({

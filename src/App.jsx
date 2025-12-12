@@ -14,6 +14,7 @@ import VoterHistory from './pages/voter/VoterHistory';
 
 import VoterResults from './pages/voter/VoterResults';
 import VoterProfile from './pages/voter/VoterProfile';
+import StudentLogin from './pages/voter/StudentLogin';
 
 // Web3
 import { Web3Provider } from './context/Web3Context';
@@ -22,6 +23,11 @@ import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
+import CandidateLogin from './pages/candidate/CandidateLogin';
+import CandidateSignup from './pages/candidate/CandidateSignup';
+import CandidateDashboard from './pages/candidate/CandidateDashboard';
+import CandidateLayout from './layouts/CandidateLayout';
+import CandidateProtectedRoute from './components/CandidateProtectedRoute';
 
 function App() {
     return (
@@ -48,7 +54,20 @@ function App() {
                                 <Route path="results" element={<AdminResults />} />
                             </Route>
 
+                            {/* Candidate Routes - Protected */}
+                            <Route path="/candidate/login" element={<CandidateLogin />} />
+                            <Route path="/candidate/signup" element={<CandidateSignup />} />
+                            <Route path="/candidate" element={
+                                <CandidateProtectedRoute>
+                                    <CandidateLayout />
+                                </CandidateProtectedRoute>
+                            }>
+                                <Route index element={<Navigate to="dashboard" replace />} />
+                                <Route path="dashboard" element={<CandidateDashboard />} />
+                            </Route>
+
                             {/* Voter Routes - Protected */}
+                            <Route path="/voter/login" element={<StudentLogin />} />
                             <Route path="/voter" element={
                                 <ProtectedRoute>
                                     <VoterLayout />
